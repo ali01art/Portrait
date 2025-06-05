@@ -212,10 +212,7 @@
                     <label for="whatsapp-number" class="block text-lg font-semibold text-gray-700 mb-2" data-key="form_whatsapp_label">رقم الواتساب:</label>
                     <input type="tel" id="whatsapp-number" name="whatsappNumber" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" required>
                 </div>
-                <div>
-                    <label for="phone-number" class="block text-lg font-semibold text-gray-700 mb-2" data-key="form_phone_label">رقم الهاتف (اختياري):</label>
-                    <input type="tel" id="phone-number" name="phoneNumber" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
-                </div>
+                <!-- Removed Phone Number (Optional) Field -->
                 <div>
                     <label for="payment-proof" class="block text-lg font-semibold text-gray-700 mb-2" data-key="form_payment_proof_label">صورة إثبات الدفع:</label>
                     <input type="file" id="payment-proof" name="paymentProof" accept="image/*" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" required>
@@ -249,10 +246,21 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase variables (Canvas environment provides these)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Firebase config (Directly from Firebase Console for GitHub Pages)
+        const firebaseConfig = {
+          apiKey: "AIzaSyCGGloaZklVOCVwhmquKbX3M2e-xgOuiTI",
+          authDomain: "portrait-131b1.firebaseapp.com",
+          projectId: "portrait-131b1",
+          storageBucket: "portrait-131b1.firebasestorage.app",
+          messagingSenderId: "625000534584",
+          appId: "1:625000534584:web:a32431b492854008238ccd" // Your specific web app ID
+        };
+        // Removed measurementId as it's for Analytics and not directly used by Firestore/Auth logic below.
+
+        // We'll use the specific appId provided for Firestore path
+        const appId = "1:625000534584:web:a32431b492854008238ccd"; 
+        // initialAuthToken is specific to Canvas environment, not used for GitHub Pages, so set to null
+        const initialAuthToken = null; 
 
         let db, auth, userId;
         let isAuthReady = false; // Flag to ensure Firestore operations only happen after auth
@@ -260,11 +268,17 @@
         // Initialize Firebase and Auth
         async function initializeFirebaseAndAuth() {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config is missing. Cannot initialize Firebase.");
-                    document.getElementById('user-id-display').querySelector('span').textContent = 'Error: Firebase Config Missing';
+                // Log Firebase config to console for debugging
+                console.log("Attempting to initialize Firebase with config:", firebaseConfig);
+
+                // Basic validation for API key
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.length < 10) {
+                    console.error("Firebase config is missing or invalid apiKey. Cannot initialize Firebase.");
+                    document.getElementById('user-id-display').querySelector('span').textContent = 'Error: Firebase Config Missing/Invalid';
                     return;
                 }
+
+                // Initialize Firebase app
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
@@ -274,32 +288,32 @@
                     if (user) {
                         userId = user.uid;
                         document.getElementById('user-id-display').querySelector('span').textContent = userId;
+                        console.log("Firebase user authenticated:", userId);
                     } else {
-                        // Sign in anonymously if no user is authenticated
-                        if (!initialAuthToken) {
+                        // Attempt to sign in anonymously if no user is authenticated
+                        try {
+                            console.log("Attempting anonymous sign-in...");
                             const anonymousUser = await signInAnonymously(auth);
                             userId = anonymousUser.user.uid;
                             document.getElementById('user-id-display').querySelector('span').textContent = userId;
-                        } else {
-                            // If there was an initialAuthToken but sign-in failed, use a random ID
+                            console.log("Firebase signed in anonymously:", userId);
+                        } catch (anonError) {
+                            console.error("Anonymous sign-in failed:", anonError);
+                            // Fallback to a random ID if anonymous sign-in also fails (e.g., auth not enabled)
                             userId = crypto.randomUUID();
-                            document.getElementById('user-id-display').querySelector('span').textContent = userId + ' (Guest)';
-                            console.warn("Authentication failed, using anonymous ID.");
+                            document.getElementById('user-id-display').querySelector('span').textContent = userId + ' (Guest - Auth Failed)';
+                            console.warn("Authentication failed, using temporary random ID. Ensure Firebase Authentication is enabled in your project.");
                         }
                     }
                     isAuthReady = true; // Auth state is now ready
                 });
 
-                // Try to sign in with custom token if available
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    // If no custom token, onAuthStateChanged will handle anonymous sign-in
-                }
+                // No need to explicitly call signInWithCustomToken here, as initialAuthToken is null for GitHub Pages.
+                // onAuthStateChanged above handles the initial auth state (anonymous sign-in).
                 
             } catch (error) {
-                console.error("Error initializing Firebase or authenticating:", error);
-                document.getElementById('user-id-display').querySelector('span').textContent = 'Error Auth';
+                console.error("Error initializing Firebase or during initial authentication setup:", error);
+                document.getElementById('user-id-display').querySelector('span').textContent = 'Error Auth Init';
                 userId = crypto.randomUUID(); // Fallback to a random ID
                 isAuthReady = true; // Mark as ready even with error to avoid blocking app
             }
@@ -353,7 +367,7 @@
                 chosen_category_summary_title: "الفئة المختارة:",
                 form_full_name_label: "الاسم الكامل:",
                 form_whatsapp_label: "رقم الواتساب:",
-                form_phone_label: "رقم الهاتف (اختياري):",
+                // Removed form_phone_label: "رقم الهاتف (اختياري):",
                 form_payment_proof_label: "صورة إثبات الدفع:",
                 form_payment_proof_hint: "يرجى إرسال صورة واضحة لإيصال الدفع.",
                 form_submit_button: "تأكيد الاشتراك",
@@ -410,7 +424,7 @@
                 chosen_category_summary_title: "Chosen Category:",
                 form_full_name_label: "Full Name:",
                 form_whatsapp_label: "WhatsApp Number:",
-                form_phone_label: "Phone Number (Optional):",
+                // Removed form_phone_label: "Phone Number (Optional):",
                 form_payment_proof_label: "Payment Proof Image:",
                 form_payment_proof_hint: "Please upload a clear image of your payment receipt.",
                 form_submit_button: "Confirm Subscription",
@@ -645,11 +659,12 @@
 
             const fullName = document.getElementById('full-name').value;
             const whatsappNumber = document.getElementById('whatsapp-number').value;
-            const phoneNumber = document.getElementById('phone-number').value;
+            // Removed phoneNumber as the field is removed from HTML
             const paymentProofFile = document.getElementById('payment-proof').files[0]; // File object
 
             if (!fullName || !whatsappNumber || !paymentProofFile) {
                 submissionErrorMessage.classList.remove('hidden');
+                submissionErrorMessage.querySelector('[data-key="submission_error_details"]').textContent = content[currentLang].submission_error_details; // Use generic error detail
                 submissionLoadingMessage.classList.add('hidden');
                 return;
             }
@@ -671,7 +686,7 @@
                 const docData = {
                     fullName: fullName,
                     whatsappNumber: whatsappNumber,
-                    phoneNumber: phoneNumber || null, // Null if optional field is empty
+                    // phoneNumber: phoneNumber || null, // Removed as field is removed
                     categoryName: inscriptionCategoryName.textContent,
                     categoryPrice: inscriptionCategoryPrice.textContent,
                     categoryDiscount: inscriptionCategoryDiscount.textContent,
@@ -709,4 +724,4 @@
         };
     </script>
 </body>
-    </html>
+            </html>
