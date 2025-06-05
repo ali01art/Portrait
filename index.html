@@ -8,7 +8,7 @@
     - Competition Categories: Interactive HTML/Tailwind cards. Goal: Inform and allow quick comparison. Interaction: Click to navigate to inscription page.
     - Cost vs. Benefit Chart & Chance to Win Chart: Bar charts using Chart.js. Goal: Visually compare data. Interaction: Dynamic update on language toggle.
     - How to Join Steps: HTML/Tailwind numbered steps. Goal: Provide clear instructions. Interaction: Text updated on language toggle.
-    - Inscription Form: HTML form with input fields and a file upload. Goal: Collect user data for chosen category. Interaction: Dynamic content based on category selection, form submission handling (simulated).
+    - Inscription Form: HTML form with input fields and a file upload. Goal: Collect user data for chosen category. Interaction: Dynamic content based on category selection, form submission handling (now with Firestore).
     - Language Toggle: Button. Goal: Provide multilingual access. Interaction: Click updates all text content across all views and chart labels/titles.
     - All graphics use Chart.js (Canvas) or structured HTML/CSS with Tailwind and Unicode characters/icons. NO SVG graphics used. NO Mermaid JS used. -->
 <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
@@ -61,6 +61,20 @@
         .view-section.active {
             display: block; /* Shown when active */
         }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #8b5cf6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0.5rem auto;
+            display: none; /* Hidden by default */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-[#FDFBF7] text-gray-800">
@@ -80,6 +94,7 @@
             <div class="container mx-auto px-6">
                 <h2 class="text-4xl md:text-6xl font-extrabold text-purple-900 mb-4" data-key="hero_title">ادخل السحب واربح بورتريه فني</h2>
                 <p class="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto" data-key="hero_subtitle">فرص متعددة للفوز وخصومات حصرية لكل المشاركين. اختر الفئة التي تناسبك وانضم إلينا الآن!</p>
+                <p id="user-id-display" class="text-sm text-gray-500 mt-4" style="direction: ltr;">User ID: <span class="font-mono text-purple-700">Loading...</span></p>
             </div>
         </header>
 
@@ -221,10 +236,76 @@
                 <p class="font-bold" data-key="submission_error_title">خطأ في التسجيل!</p>
                 <p data-key="submission_error_details">يرجى التأكد من ملء جميع الحقول المطلوبة.</p>
             </div>
+             <div id="submission-loading-message" class="mt-8 p-4 bg-blue-100 text-blue-800 rounded-lg hidden">
+                <p class="font-bold">جاري إرسال بياناتك...</p>
+                <div class="loading-spinner"></div>
+            </div>
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        // Firebase imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase variables (Canvas environment provides these)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, userId;
+        let isAuthReady = false; // Flag to ensure Firestore operations only happen after auth
+
+        // Initialize Firebase and Auth
+        async function initializeFirebaseAndAuth() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is missing. Cannot initialize Firebase.");
+                    document.getElementById('user-id-display').querySelector('span').textContent = 'Error: Firebase Config Missing';
+                    return;
+                }
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-id-display').querySelector('span').textContent = userId;
+                    } else {
+                        // Sign in anonymously if no user is authenticated
+                        if (!initialAuthToken) {
+                            const anonymousUser = await signInAnonymously(auth);
+                            userId = anonymousUser.user.uid;
+                            document.getElementById('user-id-display').querySelector('span').textContent = userId;
+                        } else {
+                            // If there was an initialAuthToken but sign-in failed, use a random ID
+                            userId = crypto.randomUUID();
+                            document.getElementById('user-id-display').querySelector('span').textContent = userId + ' (Guest)';
+                            console.warn("Authentication failed, using anonymous ID.");
+                        }
+                    }
+                    isAuthReady = true; // Auth state is now ready
+                });
+
+                // Try to sign in with custom token if available
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // If no custom token, onAuthStateChanged will handle anonymous sign-in
+                }
+                
+            } catch (error) {
+                console.error("Error initializing Firebase or authenticating:", error);
+                document.getElementById('user-id-display').querySelector('span').textContent = 'Error Auth';
+                userId = crypto.randomUUID(); // Fallback to a random ID
+                isAuthReady = true; // Mark as ready even with error to avoid blocking app
+            }
+        }
+
+        // --- Start of existing application logic ---
         const content = {
             ar: {
                 title: "مسابقة السحب الكبرى على البورتريهات",
@@ -281,6 +362,7 @@
                 submission_contact_info: "سيتم التواصل معك قريباً على رقم الواتساب الذي قدمته.",
                 submission_error_title: "خطأ في التسجيل!",
                 submission_error_details: "يرجى التأكد من ملء جميع الحقول المطلوبة.",
+                submission_loading_text: "جاري إرسال بياناتك..."
             },
             en: {
                 title: "Grand Prize Draw for Portraits",
@@ -337,6 +419,7 @@
                 submission_contact_info: "We will contact you shortly on the WhatsApp number you provided.",
                 submission_error_title: "Registration Error!",
                 submission_error_details: "Please ensure all required fields are filled.",
+                submission_loading_text: "Submitting your data..."
             }
         };
 
@@ -354,8 +437,9 @@
         const inscriptionForm = document.getElementById('inscription-form');
         const submissionMessage = document.getElementById('submission-message');
         const submissionErrorMessage = document.getElementById('submission-error-message');
+        const submissionLoadingMessage = document.getElementById('submission-loading-message');
         const submissionSuccessDetails = submissionMessage.querySelector('[data-key="submission_success_details"]');
-
+        const userIdDisplay = document.getElementById('user-id-display').querySelector('span');
 
         function wrapLabel(label, maxChars = 16) {
             if (typeof label !== 'string') return label;
@@ -547,48 +631,82 @@
             // Hide submission messages
             submissionMessage.classList.add('hidden');
             submissionErrorMessage.classList.add('hidden');
+            submissionLoadingMessage.classList.add('hidden'); // Hide loading
             inscriptionForm.reset(); // Clear form fields
         });
 
-        inscriptionForm.addEventListener('submit', (event) => {
+        inscriptionForm.addEventListener('submit', async (event) => { // Make function async
             event.preventDefault(); // Prevent default form submission
 
+            // Hide previous messages
             submissionMessage.classList.add('hidden');
             submissionErrorMessage.classList.add('hidden');
+            submissionLoadingMessage.classList.remove('hidden'); // Show loading
 
             const fullName = document.getElementById('full-name').value;
             const whatsappNumber = document.getElementById('whatsapp-number').value;
             const phoneNumber = document.getElementById('phone-number').value;
-            const paymentProof = document.getElementById('payment-proof').files[0]; // File object
+            const paymentProofFile = document.getElementById('payment-proof').files[0]; // File object
 
-            if (!fullName || !whatsappNumber || !paymentProof) {
+            if (!fullName || !whatsappNumber || !paymentProofFile) {
                 submissionErrorMessage.classList.remove('hidden');
+                submissionLoadingMessage.classList.add('hidden');
                 return;
             }
 
-            // Simulate submission (in a real app, you'd send this data to a server/database)
-            console.log('Form Submitted:', {
-                fullName,
-                whatsappNumber,
-                phoneNumber,
-                category: inscriptionCategoryName.textContent,
-                paymentProof: paymentProof ? paymentProof.name : 'No file'
-            });
+            if (!isAuthReady) {
+                submissionErrorMessage.classList.remove('hidden');
+                submissionErrorMessage.querySelector('[data-key="submission_error_details"]').textContent = content[currentLang].submission_error_details + " (Authentication not ready, please try again)";
+                submissionLoadingMessage.classList.add('hidden');
+                console.error("Firebase authentication not ready.");
+                return;
+            }
 
-            // Display success message
-            let successMessageHtml = content[currentLang].submission_success_details.replace('{categoryName}', inscriptionCategoryName.textContent);
-            submissionSuccessDetails.innerHTML = successMessageHtml;
-            submissionMessage.classList.remove('hidden');
-            
-            inscriptionForm.reset(); // Clear form fields after successful submission
+            try {
+                // Ensure userId is available
+                if (!userId) {
+                    userId = auth.currentUser?.uid || crypto.randomUUID(); // Fallback if still null
+                }
+                
+                const docData = {
+                    fullName: fullName,
+                    whatsappNumber: whatsappNumber,
+                    phoneNumber: phoneNumber || null, // Null if optional field is empty
+                    categoryName: inscriptionCategoryName.textContent,
+                    categoryPrice: inscriptionCategoryPrice.textContent,
+                    categoryDiscount: inscriptionCategoryDiscount.textContent,
+                    paymentProofFileName: paymentProofFile ? paymentProofFile.name : null, // Only store file name
+                    timestamp: new Date()
+                };
+
+                // Add document to Firestore
+                // Path: /artifacts/{appId}/users/{userId}/subscriptions
+                const subscriptionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/subscriptions`);
+                await addDoc(subscriptionsCollectionRef, docData);
+
+                // Display success message
+                let successMessageHtml = content[currentLang].submission_success_details.replace('{categoryName}', inscriptionCategoryName.textContent);
+                submissionSuccessDetails.innerHTML = successMessageHtml;
+                submissionMessage.classList.remove('hidden');
+                
+                inscriptionForm.reset(); // Clear form fields after successful submission
+
+            } catch (error) {
+                console.error("Error submitting to Firestore:", error);
+                submissionErrorMessage.classList.remove('hidden');
+                submissionErrorMessage.querySelector('[data-key="submission_error_details"]').textContent = content[currentLang].submission_error_details + " " + error.message;
+            } finally {
+                submissionLoadingMessage.classList.add('hidden'); // Hide loading
+            }
         });
 
 
         // Initial setup on page load
         window.onload = () => {
+            initializeFirebaseAndAuth(); // Initialize Firebase first
             updateContent(currentLang);
             createCharts(currentLang);
         };
     </script>
 </body>
-</html>
+    </html>
